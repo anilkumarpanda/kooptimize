@@ -13,6 +13,8 @@ from sklearn.model_selection import StratifiedShuffleSplit
 import random
 import pandas as pd
 from sklearn.metrics import roc_auc_score
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.model_selection import cross_validate, cross_val_predict
 # For use in Jupyter notebooks only:
 
 # Create reference solutions
@@ -65,20 +67,29 @@ def apply_rules_to_df(X,y,selected_rules):
         return X,y
     else :
         return X,y
+
+
+def get_trained_model(X,y):
+    """
+    Returns a trained model.
+    """
+#     clf = GradientBoostingClassifier(n_estimators=500,max_features='auto',
+#                                      learning_rate=0.01,random_state=0)
+    clf = GradientBoostingClassifier(max_features='auto')
+    score = cross_validate(clf,X,y,scoring=['roc_auc'],cv=5)
+    return clf.fit(X,y),(np.mean(score['test_roc_auc'])*100)
+
     
-def show_population_score_df(population,scores):
+def show_population_score_df(population,scores,
+column_name=['#Rules','AUC Diff','No.ofApplications']):
     
-    rule_list = []
-    #result_df = pd.DataFrame(scores,columns=['#Rules','AUC','No.ofApplications'])
-    result_df = pd.DataFrame(scores,columns=['AUC','No.ofApplications'])
-    #result_df['#Rules']=result_df['#Rules'].apply(lambda x : np.abs(x))
-    
-    # Add Rules to dataframe
-    for individual in population:
-        rule_list.append(get_rules_for_individual(individual))
-        
-    result_df['Rules'] = rule_list
-    result_df.sort_values(by=['AUC'],ascending=False)
+    result_df = pd.DataFrame(scores,columns=column_name)
+    #result_df = pd.DataFrame(scores,columns=['AUC','No.ofApplications'])
+    result_df = result_df.apply(lambda x: np.abs(x) if x.name in [column_name[0],column_name[1]] else x)
+    #Add Rules to dataframe
+    result_df['Rules'] = [get_rules_for_individual(individual) for individual in population]
+    #Sort dataframe by AUC Difference
+    result_df.sort_values(by=column_name[1],ascending=True,inplace=True)
     
     return result_df
 
@@ -127,8 +138,8 @@ def get_cv_score(df,Y,feature_list=[],shuffle=True):
         X_train = X
         y_train = Y
 
-    parameters = {'n_estimators': list(range(10,50,10))}
-    clf = RandomForestClassifier(n_estimators=10)
+    parameters = {'learning_rate': [0.01,0.02,0.05]}
+    clf = GradientBoostingClassifier(max_features='auto')
     random_search = RandomizedSearchCV(clf,param_distributions=parameters,
     n_iter=10,cv=3,scoring='roc_auc',iid=False)
     random_search.fit(X,y_ko)
@@ -216,9 +227,9 @@ def score_population_with_trained_clf(df,Y,clf,population):
 
     population = np.delete(population, del_list, axis=0)
 
-    scores = np.zeros((population.shape[0],2))
+    scores = np.zeros((population.shape[0],3))
     # Minimize function 1
-    # scores[:,0] = -1*population.sum(axis=1)
+    scores[:,0] = -1*population.sum(axis=1)
 
     auc_list = []
     no_of_records_list = []
@@ -231,20 +242,19 @@ def score_population_with_trained_clf(df,Y,clf,population):
             auc_list.append(0)
         else:
             auc = get_auc(df,Y,clf,individual)
-            base_auc_diff = auc-68
+            base_auc_diff = auc-67
             #auc = get_cv_score_lr(df,Y,individual)
             auc_list.append(base_auc_diff)
             X_ko,y_ko=apply_rules_to_df(df,Y,get_rules_for_individual(individual))
             no_of_records = X_ko.shape[0]
             #total_amount = np.log(np.sum(X_ko['disbursed_amount']))
-            #auc_complexity_score = get_combined_score(no_of_features,auc)
-            print(np.sum(individual),base_auc_diff,no_of_records)
+            #print(np.sum(individual),base_auc_diff,no_of_records)
             no_of_records_list.append(no_of_records)
 
     #Minimize function 2
-    scores[:,0] = auc_list
+    scores[:,1] = auc_list
     #Maximize function 2
-    scores[:,1] = no_of_records_list
+    scores[:,2] = no_of_records_list
     #print("Scores",scores)
     return population,scores
 
@@ -511,26 +521,26 @@ def breed_population(population):
 
 
 # Plot Pareto front (for two scores only)
-def plot_2d_paretofront(scores,generation):
+def plot_2d_paretofront(scores,generation,labels):
     """
     Function to plot the 2D plot of
     :param scores: scores to plot
     :return:
     """
     x = scores[:, 0]*-1
-    y = scores[:, 1]
+    y = scores[:, 1]*-1
     z = scores[:, 2]
-    plt.rcParams["figure.figsize"]=(15,9)
+    plt.rcParams["figure.figsize"]=(15,12)
     fig,(ax1,ax2,ax3) = plt.subplots(1,3)
     
     ax1.scatter(x,y)
-    ax1.set(xlabel="No.of KO Rules",ylabel="AUC")
+    ax1.set(xlabel=labels[0],ylabel=labels[1])
 
     ax2.scatter(y,z)
-    ax2.set(xlabel="AUC",ylabel="No.of Applications passed.")
+    ax2.set(xlabel=labels[1],ylabel=labels[2])
 
     ax3.scatter(x,z)
-    ax3.set(xlabel="No.of KO Rules",ylabel="No.of Applications passed")
+    ax3.set(xlabel=labels[0],ylabel=labels[2])
     
     fig.suptitle("NSGA 2 : Generation {}".format(generation),fontsize=16)
     fig.tight_layout(rect=[0, 0.03, 1, 0.95])
@@ -538,10 +548,9 @@ def plot_2d_paretofront(scores,generation):
     plt.show()
 
 
-
-def plot_3d_paretofront(scores,generation) :
+def plot_3d_paretofront(scores,generation,labels) :
     X = list(scores[:,0]*-1)
-    Y = list(scores[:,1])
+    Y = list(scores[:,1]*-1)
     Z = list(scores[:,2])
 
     plotx,ploty, = np.meshgrid(np.linspace(np.min(X),np.max(X),10),\
@@ -551,7 +560,16 @@ def plot_3d_paretofront(scores,generation) :
     fig = plt.figure(figsize=(10,10))
     fig.suptitle("NSGA 2 : Generation {}".format(generation),fontsize=16)
     ax = fig.add_subplot(111, projection='3d')
-    ax.set(xlabel='No.of KO Rules',ylabel='AUC',zlabel="No.of Applications passed")
+    ax.set(xlabel=labels[0],ylabel=labels[1],zlabel=labels[2])
     ax.plot_surface(plotx,ploty,plotz,cstride=1,rstride=1,cmap='viridis', edgecolor='none')
     fig.savefig('images/pareto_3D_gen_{}.png'.format(generation))
     plt.show() 
+
+def plot_gen_time(generations,time_taken):
+    """
+    """
+    fig,ax = plt.subplots()
+    ax.plot(generations,time_taken)
+    ax.set(xlabel="Generations",ylabel="Time (secs)")
+    ax.set_title('Time required per Generation.')
+    plt.show()
