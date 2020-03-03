@@ -56,6 +56,7 @@ def get_rules_for_individual(individual):
 
 def apply_rules_to_df(X,y,selected_rules):
     
+    
     df = X
     df['target'] = y
     
@@ -64,8 +65,12 @@ def apply_rules_to_df(X,y,selected_rules):
             df = df.query(selected_rules[key]).copy()
         y = df['target']
         X = df.drop(['target'],axis=1)
+        
+        
         return X,y
     else :
+        y = df['target']
+        X = df.drop(['target'],axis=1)
         return X,y
 
 
@@ -79,9 +84,43 @@ def get_trained_model(X,y):
     score = cross_validate(clf,X,y,scoring=['roc_auc'],cv=5)
     return clf.fit(X,y),(np.mean(score['test_roc_auc'])*100)
 
+def get_default_rate(X,trained_model,threshold = 0.45):
+    """
+    Get default rate.
+    """
+    y_ko_all_rules_pred = trained_model.predict_proba(X)[:,1]
+    y_ko_all_rules_bin = [1 if x >=threshold else 0 for x in y_ko_all_rules_pred ]
+    value,counts = np.unique(y_ko_all_rules_bin,return_counts=True)
+    default_rate = counts[1]/len(y_ko_all_rules_bin)
+    return default_rate*100
+
+def get_default_rate_for_delta_applications(population,X_optimize,y_optimize,trained_model,overall_default_rate=False):
     
-def show_population_score_df(population,scores,
-column_name=['#Rules','AUC Diff','No.ofApplications']):
+    all_rules = [1,1,1,1,1,1,1,1,1,1]
+    default_rate_of_new_applications = []
+
+    for i in range(0,len(population)):
+    
+        selected_rules = get_rules_for_individual(population[i])
+        X_ind,y_ind = apply_rules_to_df(X_optimize,y_optimize,selected_rules)
+        #print(f"Expected default % of all optimised dataset {get_default_rate(X_ind,trained_model)}")
+        
+        selected_rules = get_rules_for_individual(all_rules)
+        X_ko,y_ko = apply_rules_to_df(X_optimize,y_optimize,selected_rules)
+        #print(f"Expected default % of all rule KO dataset {get_default_rate(X_ko,trained_model)}")
+
+        delta_app_X_df = pd.concat([X_ko,X_ind]).drop_duplicates(keep=False)
+        delta_app_X_df.dropna(inplace=True)
+        default_rate = get_default_rate(delta_app_X_df,trained_model)
+        default_rate_of_new_applications.append(default_rate)
+        #print(f"Expected default % of only new applications {default_rate}")
+        
+        
+        #print(f"Additional disbursed amount {(np.sum(delta_app_X_df['disbursed_amount']))}")
+        #print()
+    return default_rate_of_new_applications
+
+def show_population_score_df(population,scores,column_name=['#Rules','AUC Diff','No.ofApplications']):
     
     result_df = pd.DataFrame(scores,columns=column_name)
     #result_df = pd.DataFrame(scores,columns=['AUC','No.ofApplications'])
@@ -89,7 +128,7 @@ column_name=['#Rules','AUC Diff','No.ofApplications']):
     #Add Rules to dataframe
     result_df['Rules'] = [get_rules_for_individual(individual) for individual in population]
     #Sort dataframe by AUC Difference
-    result_df.sort_values(by=column_name[1],ascending=True,inplace=True)
+    #result_df.sort_values(by=column_name[1],ascending=True,inplace=True)
     
     return result_df
 
@@ -147,6 +186,7 @@ def get_cv_score(df,Y,feature_list=[],shuffle=True):
 
 def get_auc(X,y,trained_model,individual):
     """
+
     Calculate the AUC for given individual from the trained model.
     """
     selected_rules = get_rules_for_individual(individual)
@@ -231,7 +271,7 @@ def score_population_with_trained_clf(df,Y,clf,population):
     # Minimize function 1
     scores[:,0] = -1*population.sum(axis=1)
 
-    auc_list = []
+    default_rate_list = []
     no_of_records_list = []
 
     for individual in population:
@@ -241,18 +281,29 @@ def score_population_with_trained_clf(df,Y,clf,population):
             print("Empty Individual found ! Check removal code")
             auc_list.append(0)
         else:
-            auc = get_auc(df,Y,clf,individual)
-            base_auc_diff = auc-67
-            #auc = get_cv_score_lr(df,Y,individual)
-            auc_list.append(base_auc_diff)
+            
+            X_ko,y_ko=apply_rules_to_df(df,Y,get_rules_for_individual(individual))
+#             auc = get_auc(df,Y,clf,individual)
+#             base_auc_diff = auc-67
+#             #auc = get_cv_score_lr(df,Y,individual)
+#             auc_list.append(base_auc_diff)
+
+            
+            
             X_ko,y_ko=apply_rules_to_df(df,Y,get_rules_for_individual(individual))
             no_of_records = X_ko.shape[0]
+            
             #total_amount = np.log(np.sum(X_ko['disbursed_amount']))
             #print(np.sum(individual),base_auc_diff,no_of_records)
             no_of_records_list.append(no_of_records)
+            
+            #Minimize the default rate.
+            default_rate = get_default_rate(X_ko,clf)
+            default_rate_list.append(-1*default_rate)
+            
 
     #Minimize function 2
-    scores[:,1] = auc_list
+    scores[:,1] = default_rate_list
     #Maximize function 2
     scores[:,2] = no_of_records_list
     #print("Scores",scores)
@@ -530,7 +581,7 @@ def plot_2d_paretofront(scores,generation,labels):
     x = scores[:, 0]*-1
     y = scores[:, 1]*-1
     z = scores[:, 2]
-    plt.rcParams["figure.figsize"]=(15,12)
+    plt.rcParams["figure.figsize"]=(20,10)
     fig,(ax1,ax2,ax3) = plt.subplots(1,3)
     
     ax1.scatter(x,y)
