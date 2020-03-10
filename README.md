@@ -9,6 +9,6 @@ Within financial organisations there is ever growing demand to optimise these kn
 
 From an optimisation prespective this can be formulated as multi objective optimisatino problem,where the objectives are :
 *  Reduce the no.of KOR.
-*  Maintain high AUC of the model.
+*  Maintain low default rate.
 *  Increase the no.of applications.
 
