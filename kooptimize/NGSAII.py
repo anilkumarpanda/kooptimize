@@ -54,18 +54,24 @@ def get_rules_for_individual(individual):
     
     return selected_rules_dict
 
-def apply_rules_to_df(X,y,selected_rules):
+def apply_rules_to_df(X,y,selected_rules,randomize=False):
     
+    """
+    Apply the selected rules to a dataframe.
+    """
     
     df = X
     df['target'] = y
     
     if len(selected_rules.keys())>=1:
-        for key in selected_rules.keys():
+        #Convert keys to a random list.
+        key_list = list(selected_rules.keys())
+        random.shuffle(key_list)
+        for key in key_list:
             df = df.query(selected_rules[key]).copy()
+        
         y = df['target']
         X = df.drop(['target'],axis=1)
-        
         
         return X,y
     else :
@@ -86,7 +92,7 @@ def get_trained_model(X,y):
 
 def get_default_rate(X,trained_model,threshold = 0.45):
     """
-    Get default rate.
+    Get default rate based on the classifier.
     """
     y_ko_all_rules_pred = trained_model.predict_proba(X)[:,1]
     y_ko_all_rules_bin = [1 if x >=threshold else 0 for x in y_ko_all_rules_pred ]
@@ -288,8 +294,6 @@ def score_population_with_trained_clf(df,Y,clf,population):
 #             #auc = get_cv_score_lr(df,Y,individual)
 #             auc_list.append(base_auc_diff)
 
-            
-            
             X_ko,y_ko=apply_rules_to_df(df,Y,get_rules_for_individual(individual))
             no_of_records = X_ko.shape[0]
             
