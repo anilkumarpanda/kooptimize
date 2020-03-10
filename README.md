@@ -1,5 +1,4 @@
-# kooptimize
-Knock out rule optimisation using Non dominated Sorting Genetic Algorithm-II
+# Knock out rule optimisation using Non dominated Sorting Genetic Algorithm-II
 
 Knock out Rules (KOR) are generally the first step in evaluating a credit applications. 
 KOR were developed in the pre-machine learning era where institutins developed expert based scorecards for scoring credit applications. This means starting off with simple set of KOR such as e.g. no applicant
